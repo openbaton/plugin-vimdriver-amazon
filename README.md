@@ -1,7 +1,10 @@
  <img src="https://raw.githubusercontent.com/openbaton/openbaton.github.io/master/images/openBaton.png" width="250"/>
   
-  Copyright © 2015-2017 [Open Baton](http://openbaton.org). Licensed under [Apache v2 License](http://www.apache.org/licenses/LICENSE-2.0).
+  Copyright © 2015-2017 [Open Baton](http://openbaton.org). 
+  Licensed under [Apache v2 License](http://www.apache.org/licenses/LICENSE-2.0).
   
+[![Build Status](https://travis-ci.org/openbaton/plugin-vimdriver-amazon.svg?branch=master)](https://travis-ci.org/openbaton/plugin-vimdriver-amazon)
+
 # Open Baton Amazon EC2 Driver
   
   This project **amazon-plugin** contains an implementation of a driver for integrating Open Baton with Amazon EC2 service. 
