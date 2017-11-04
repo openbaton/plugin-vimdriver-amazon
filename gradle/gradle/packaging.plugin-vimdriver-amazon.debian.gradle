@@ -1,0 +1,70 @@
+/*
+ * Copyright (c) 2016 Open Baton (http://www.openbaton.org)
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+ext {
+    debianApplicationVersionFull = "${applicationVersionFull}".replaceAll("-", ".")
+
+    baseName = 'openbaton'
+    componentName = "plugin-vimdriver-amazon"
+    fullName = "${baseName}-${componentName}"
+    versionName = "${version}".replaceAll("-SNAPSHOT", "")
+    propertiesDir = '/etc/openbaton'
+    baseBinaryDir = '/usr/lib/openbaton'
+    jarSubpathName = "plugins/vim-drivers"
+}
+
+task logDebianPackageJavaDependency() {
+    // print the logs about the correct java dependency
+    doLast() {
+        if (project.hasProperty('javaVersion') && (javaVersion == "8")) {
+            println " * Adding debian package dependency to Java 8"
+        }
+        else {
+            println " * Adding debian package dependency to Java 7"
+        }
+    }
+}
+
+task makeDeb(type: Deb, dependsOn: [jar, build, logDebianPackageJavaDependency]) {
+    packageName = (applicationRelease) ? "${fullName}" : "${fullName}-nightly"
+    version = debianApplicationVersionFull
+    //release = 1
+    priority = 'optional'
+    arch = 'all'
+    maintainer = 'Open Baton Team <dev@openbaton.org>'
+    vendor = 'Open Source (Implemented by Fraunhofer FOKUS and TUB)'
+    license = 'Apache 2.0 License'
+    url = 'http://openbaton.github.io/index.html'
+    summary = 'Amazon Virtualized Infrastructure Manager (VIM) Driver Plugin for the Open Baton Project'
+    packageDescription = 'The Amazon VIM Driver Plugin is a component of the Open Baton projetc, an ETSI compliant implementation of a NFV Management and Orchestration (MANO). It allows, using the Open Baton system, to deploy services on an Amazon EC2'
+
+    preInstall file('gradle/gradle/scripts/debian/preinst')
+
+    // set the correct java dependency
+    if (project.hasProperty('javaVersion') && (javaVersion == "8")) {
+        requires('openjdk-8-jre')
+    }
+    else {
+        requires('openjdk-7-jre')
+    }
+
+    // Copy files from "from path" to "into path"
+    from(jar.outputs.files) {                                                                                                   // jar file
+        into "${baseBinaryDir}/${jarSubpathName}"
+        rename("(.*)","${fullName}-${version}.jar")
+    }
+}
+
