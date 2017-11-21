@@ -16,6 +16,8 @@
 
 package org.openbaton.drivers.amazon;
 
+import com.amazonaws.AmazonClientException;
+import com.amazonaws.AmazonServiceException;
 import com.amazonaws.auth.AWSStaticCredentialsProvider;
 import com.amazonaws.auth.BasicAWSCredentials;
 import com.amazonaws.regions.Regions;
@@ -56,6 +58,8 @@ public class AmazonDriver extends VimDriver {
   public static void main(String[] args)
       throws NoSuchMethodException, IOException, InstantiationException, TimeoutException,
           IllegalAccessException, InvocationTargetException, InterruptedException {
+
+
     if (args.length == 4) {
       log.info("Starting the plugin with CUSTOM parameters: ");
       log.info("name: " + args[0]);
@@ -114,6 +118,7 @@ public class AmazonDriver extends VimDriver {
       client =
           AmazonEC2ClientBuilder.standard()
               .withRegion(regions)
+
               .withCredentials(new AWSStaticCredentialsProvider(awsCreds))
               .build();
     } catch (IllegalArgumentException e) {
@@ -163,8 +168,9 @@ public class AmazonDriver extends VimDriver {
       log.info("Retrieved security ids");
       int deviceIndex = 0;
       for (Network net : searchForRelevantSubnets(presentSubnets, newNetworks)) {
-        inters.add(createInterface(net, deviceIndex, newNetworks));
+        inters.add(createInterface(net, deviceIndex, newNetworks, groupIds));
         deviceIndex++;
+        log.info("Interface " + deviceIndex);
       }
       log.info("Created interfaces");
       String amiID = imageExistsOnAWS(image, client);
@@ -202,10 +208,10 @@ public class AmazonDriver extends VimDriver {
       tags.add(tag);
       CreateTagsRequest tagsRequest = new CreateTagsRequest().withTags(tags).withResources(id);
       client.createTags(tagsRequest);
-      ModifyInstanceAttributeRequest groupsReq =
+      /*ModifyInstanceAttributeRequest groupsReq =
           new ModifyInstanceAttributeRequest().withGroups(groupIds).withInstanceId(id);
       log.info("Assigning security groups to instance " + id);
-      ModifyInstanceAttributeResult groupRes = client.modifyInstanceAttribute(groupsReq);
+      ModifyInstanceAttributeResult groupRes = client.modifyInstanceAttribute(groupsReq);*/
       List<Server> servers = listServer(vimInstance);
       for (Server ser : servers) {
         if (ser.getHostName().equals(name)) {
@@ -220,10 +226,14 @@ public class AmazonDriver extends VimDriver {
     } catch (UnsupportedEncodingException e) {
       VimDriverException vimDriverException = new VimDriverException(e.getMessage());
       throw vimDriverException;
+    } catch (AmazonClientException e) {
+      VimDriverException vimDriverException = new VimDriverException(e.getMessage());
+      throw vimDriverException;
     }
     log.info("Instance " + name + " launched");
     return server;
   }
+
 
   /**
    * Checks if the image exists inside AWS and returns its ID
@@ -232,7 +242,7 @@ public class AmazonDriver extends VimDriver {
    * @param client AmazonEC2 client to make a request
    * @return id of the image or null if no image is there
    */
-  private String imageExistsOnAWS(String nameId, AmazonEC2 client) {
+  private String imageExistsOnAWS(String nameId, AmazonEC2 client) throws AmazonClientException {
     Filter filter = new Filter();
     filter.setName("name");
     filter.setValues(Arrays.asList(nameId));
@@ -263,12 +273,12 @@ public class AmazonDriver extends VimDriver {
    * @return the list of interfaces
    */
   private InstanceNetworkInterfaceSpecification createInterface(
-      Network net, int deviceIndex, Set<VNFDConnectionPoint> cps) {
+      Network net, int deviceIndex, Set<VNFDConnectionPoint> cps, Set<String> secIDs) {
     InstanceNetworkInterfaceSpecification interSpec =
         new InstanceNetworkInterfaceSpecification()
             .withDeleteOnTermination(true)
             .withSubnetId(net.getExtId())
-            .withDeviceIndex(deviceIndex);
+            .withDeviceIndex(deviceIndex).withGroups(secIDs);
     String floatingIp = "";
     for (VNFDConnectionPoint cp : cps) {
       if (net.getName().equals(cp.getVirtual_link_reference())) {
@@ -289,14 +299,32 @@ public class AmazonDriver extends VimDriver {
    * @return subnets the instance is connected to
    */
   private List<Network> searchForRelevantSubnets(List<Network> nets, Set<VNFDConnectionPoint> cps) {
+      log.info(nets.get(0).toString());
+      log.info(nets.get(1).toString());
+      ArrayList<VNFDConnectionPoint> cpList = new ArrayList<>(cps);
+    Collections.sort(cpList, new Comparator<VNFDConnectionPoint>() {
+        @Override
+        public int compare(VNFDConnectionPoint t, VNFDConnectionPoint t1) {
+            if (t.getInterfaceId() > t1.getInterfaceId()) {
+                return -1;
+            } if (t.getInterfaceId() == t1.getInterfaceId()) {
+                return 0;
+            } else {
+                return 1;
+            }
+        }
+    });
     List<Network> relevantSubnets = new ArrayList<>();
-    for (VNFDConnectionPoint cp : cps) {
+    for (VNFDConnectionPoint cp : cpList) {
+        log.info("loop1");
       for (Network net : nets) {
         if (net.getName().equals(cp.getVirtual_link_reference())) {
+            log.info("loop2");
           relevantSubnets.add(net);
         }
       }
     }
+
     return relevantSubnets;
   }
 
@@ -311,7 +339,7 @@ public class AmazonDriver extends VimDriver {
    *     does not exits
    */
   private Set<String> getSecurityIdFromName(
-      Set<String> groupNames, AmazonEC2 client, VimInstance vimInstance) throws VimDriverException {
+      Set<String> groupNames, AmazonEC2 client, VimInstance vimInstance) throws VimDriverException, AmazonClientException {
     String vpcId = getVpcsMap(vimInstance).get(vimInstance.getTenant());
     if (vpcId == null) {
       throw new VimDriverException("No such VPC " + vimInstance.getTenant() + " exists");
@@ -343,66 +371,78 @@ public class AmazonDriver extends VimDriver {
 
   @java.lang.Override
   public java.util.List<NFVImage> listImages(VimInstance vimInstance) throws VimDriverException {
-    AmazonEC2 client = createClient(vimInstance);
-    String keyWord = properties.getProperty("image-key-word", "*");
-    String keyWords[] = keyWord.split(",");
-    for (int i = 0; i < keyWords.length; i++) {
-      keyWords[i] = "*" + keyWords[i] + "*";
-    }
-    Filter filter = new Filter();
-    filter.setName("name");
-    filter.setValues(Arrays.asList(keyWords));
-    DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
-    describeImagesRequest.setFilters(Arrays.asList(filter));
-    DescribeImagesResult describeImagesResult = client.describeImages(describeImagesRequest);
-    List<NFVImage> images = new ArrayList<>();
-    for (Image image : describeImagesResult.getImages()) {
-      images.add(Utils.getImage(image));
-    }
-    filter.setName("image-id");
-    filter.setValues(Arrays.asList(keyWords));
-    describeImagesRequest = new DescribeImagesRequest();
-    describeImagesRequest.setFilters(Arrays.asList(filter));
-    describeImagesResult = client.describeImages(describeImagesRequest);
-    for (Image image : describeImagesResult.getImages()) {
-      images.add(Utils.getImage(image));
-    }
+      try {
+          AmazonEC2 client = createClient(vimInstance);
+          String keyWord = properties.getProperty("image-key-word", "*");
+          String keyWords[] = keyWord.split(",");
+          for (int i = 0; i < keyWords.length; i++) {
+              keyWords[i] = "*" + keyWords[i] + "*";
+          }
+          Filter filter = new Filter();
+          filter.setName("name");
+          filter.setValues(Arrays.asList(keyWords));
+          DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
+          describeImagesRequest.setFilters(Arrays.asList(filter));
+          DescribeImagesResult describeImagesResult = client.describeImages(describeImagesRequest);
+          List<NFVImage> images = new ArrayList<>();
+          for (Image image : describeImagesResult.getImages()) {
+              images.add(Utils.getImage(image));
+          }
+          filter.setName("image-id");
+          filter.setValues(Arrays.asList(keyWords));
+          describeImagesRequest = new DescribeImagesRequest();
+          describeImagesRequest.setFilters(Arrays.asList(filter));
+          describeImagesResult = client.describeImages(describeImagesRequest);
+          for (Image image : describeImagesResult.getImages()) {
+              images.add(Utils.getImage(image));
+          }
 
-    return images;
+          return images;
+      } catch (AmazonClientException e) {
+          VimDriverException vimDriverException = new VimDriverException(e.getMessage());
+          throw vimDriverException;
+      }
+
   }
 
   @java.lang.Override
   public java.util.List<Server> listServer(VimInstance vimInstance) throws VimDriverException {
-    List<Server> servers = new ArrayList<>();
-    AmazonEC2 client = createClient(vimInstance);
-    String vpcId = getVpcsMap(vimInstance).get(vimInstance.getTenant());
-    if (vpcId == null) {
-      throw new VimDriverException("No such VPC " + vimInstance.getTenant() + " exists");
-    }
-    Filter filter = new Filter();
-    filter.setName("vpc-id");
-    filter.setValues(Arrays.asList(vpcId));
-    boolean done = false;
-    List<Network> nets = listNetworks(vimInstance);
-    while (!done) {
-      DescribeInstancesRequest request = new DescribeInstancesRequest();
-      request.setFilters(Arrays.asList(filter));
-      DescribeInstancesResult response = client.describeInstances(request);
-      for (Reservation reservation : response.getReservations()) {
-        for (Instance instance : reservation.getInstances()) {
-          servers.add(Utils.getServer(instance, nets));
-        }
+      try {
+          List<Server> servers = new ArrayList<>();
+          AmazonEC2 client = createClient(vimInstance);
+          String vpcId = getVpcsMap(vimInstance).get(vimInstance.getTenant());
+          if (vpcId == null) {
+              throw new VimDriverException("No such VPC " + vimInstance.getTenant() + " exists");
+          }
+          Filter filter = new Filter();
+          filter.setName("vpc-id");
+          filter.setValues(Arrays.asList(vpcId));
+          boolean done = false;
+          List<Network> nets = listNetworks(vimInstance);
+          while (!done) {
+              DescribeInstancesRequest request = new DescribeInstancesRequest();
+              request.setFilters(Arrays.asList(filter));
+              DescribeInstancesResult response = client.describeInstances(request);
+              for (Reservation reservation : response.getReservations()) {
+                  for (Instance instance : reservation.getInstances()) {
+                      servers.add(Utils.getServer(instance, nets));
+                  }
+              }
+              request.setNextToken(response.getNextToken());
+              if (response.getNextToken() == null) {
+                  done = true;
+              }
+          }
+          return servers;
+      } catch (AmazonClientException e) {
+          VimDriverException vimDriverException = new VimDriverException(e.getMessage());
+          throw vimDriverException;
       }
-      request.setNextToken(response.getNextToken());
-      if (response.getNextToken() == null) {
-        done = true;
-      }
-    }
-    return servers;
   }
 
   @java.lang.Override
   public java.util.List<Network> listNetworks(VimInstance vimInstance) throws VimDriverException {
+      log.info("Listing networks");
     List<Network> nfvoNetworks = new ArrayList<>();
     AmazonEC2 client = createClient(vimInstance);
     String vpcId = getVpcsMap(vimInstance).get(vimInstance.getTenant());
@@ -449,7 +489,6 @@ public class AmazonDriver extends VimDriver {
       java.util.Map<String, String> floatingIps,
       java.util.Set<Key> keys)
       throws VimDriverException {
-    AmazonEC2 client = createClient(vimInstance);
 
     Server server =
         launchInstance(
@@ -485,91 +524,104 @@ public class AmazonDriver extends VimDriver {
   @java.lang.Override
   public void deleteServerByIdAndWait(VimInstance vimInstance, String id)
       throws VimDriverException {
-    AmazonEC2 client = createClient(vimInstance);
-    TerminateInstancesRequest req = new TerminateInstancesRequest().withInstanceIds(id);
-    TerminateInstancesResult res = client.terminateInstances(req);
+      try {
+          AmazonEC2 client = createClient(vimInstance);
+          TerminateInstancesRequest req = new TerminateInstancesRequest().withInstanceIds(id);
+          TerminateInstancesResult res = client.terminateInstances(req);
+      } catch (AmazonClientException e) {
+          VimDriverException vimDriverException = new VimDriverException(e.getMessage());
+          throw vimDriverException;
+      }
   }
 
   @java.lang.Override
   public Network createNetwork(VimInstance vimInstance, Network network) throws VimDriverException {
     AmazonEC2 client = createClient(vimInstance);
-
-    String vpcId = getVpcsMap(vimInstance).get(vimInstance.getTenant());
-    if (vpcId == null) {
-      throw new VimDriverException("No such VPC " + vimInstance.getTenant() + " exists");
-    }
-    CreateSubnetResult res;
     try {
-      CreateSubnetRequest req =
-          new CreateSubnetRequest()
-              .withVpcId(vpcId)
-              .withCidrBlock(network.getSubnets().iterator().next().getCidr());
-      res = client.createSubnet(req);
-    } catch (Exception e) {
-      log.debug("Provided CIDR is invalid, generating different one");
-      DescribeVpcsRequest req = new DescribeVpcsRequest();
-      DescribeVpcsResult resVpc = client.describeVpcs(req);
-      Vpc vpc = null;
-      for (Vpc vpc1 : resVpc.getVpcs()) {
-        if (vpc1.getVpcId().equals(vpcId)) {
-          vpc = vpc1;
+        String vpcId = getVpcsMap(vimInstance).get(vimInstance.getTenant());
+        if (vpcId == null) {
+            throw new VimDriverException("No such VPC " + vimInstance.getTenant() + " exists");
         }
-      }
-      if (vpc == null) {
-        throw new VimDriverException("The vpc with id " + vpcId + " might not exist anymore");
-      }
-      String vpcCidr = vpc.getCidrBlock();
-      String adrMask[] = vpcCidr.split("/");
-      String adr[] = adrMask[0].split("…\\.")[0].split("\\.");
-      Random random = new Random();
-      int number = random.nextInt(255);
-      String subnetCidr = adr[0] + "." + adr[1] + "." + number + "." + "0" + "/24";
-      log.info("Generated CIDR " + subnetCidr);
-      CreateSubnetRequest newReq =
-          new CreateSubnetRequest().withVpcId(vpcId).withCidrBlock(subnetCidr);
-      res = client.createSubnet(newReq);
-    }
-    String id = res.getSubnet().getSubnetId();
-    List<Tag> tags = new ArrayList<>();
-    Tag tag = new Tag();
-    tag.setKey("Name");
-    tag.setValue(network.getName());
-    tags.add(tag);
-    CreateTagsRequest tagsRequest = new CreateTagsRequest().withTags(tags).withResources(id);
-    client.createTags(tagsRequest);
-    List<Network> nets = listNetworks(vimInstance);
-    Network returnNetwork = null;
-    for (Network net : nets) {
-      if (net.getExtId().equals(res.getSubnet().getSubnetId())) {
-        returnNetwork = net;
-      }
-    }
+        CreateSubnetResult res;
+        try {
+            CreateSubnetRequest req =
+                    new CreateSubnetRequest()
+                            .withVpcId(vpcId)
+                            .withCidrBlock(network.getSubnets().iterator().next().getCidr());
+            res = client.createSubnet(req);
+        } catch (Exception e) {
+            log.debug("Provided CIDR is invalid, generating different one");
+            DescribeVpcsRequest req = new DescribeVpcsRequest();
+            DescribeVpcsResult resVpc = client.describeVpcs(req);
+            Vpc vpc = null;
+            for (Vpc vpc1 : resVpc.getVpcs()) {
+                if (vpc1.getVpcId().equals(vpcId)) {
+                    vpc = vpc1;
+                }
+            }
+            if (vpc == null) {
+                throw new VimDriverException("The vpc with id " + vpcId + " might not exist anymore");
+            }
+            String vpcCidr = vpc.getCidrBlock();
+            String adrMask[] = vpcCidr.split("/");
+            String adr[] = adrMask[0].split("…\\.")[0].split("\\.");
+            Random random = new Random();
+            int number = random.nextInt(255);
+            String subnetCidr = adr[0] + "." + adr[1] + "." + number + "." + "0" + "/24";
+            log.info("Generated CIDR " + subnetCidr);
+            CreateSubnetRequest newReq =
+                    new CreateSubnetRequest().withVpcId(vpcId).withCidrBlock(subnetCidr);
+            res = client.createSubnet(newReq);
+        }
+        String id = res.getSubnet().getSubnetId();
+        List<Tag> tags = new ArrayList<>();
+        Tag tag = new Tag();
+        tag.setKey("Name");
+        tag.setValue(network.getName());
+        tags.add(tag);
+        CreateTagsRequest tagsRequest = new CreateTagsRequest().withTags(tags).withResources(id);
+        client.createTags(tagsRequest);
+        List<Network> nets = listNetworks(vimInstance);
+        Network returnNetwork = null;
+        for (Network net : nets) {
+            if (net.getExtId().equals(res.getSubnet().getSubnetId())) {
+                returnNetwork = net;
+            }
+        }
 
-    return returnNetwork;
+        return returnNetwork;
+    } catch (AmazonClientException e) {
+        VimDriverException vimDriverException = new VimDriverException(e.getMessage());
+        throw vimDriverException;
+    }
   }
 
   private HashMap<String, String> getVpcsMap(VimInstance vimInstance) throws VimDriverException {
     AmazonEC2 client = createClient(vimInstance);
-    DescribeVpcsRequest describeVpcsRequest = new DescribeVpcsRequest();
-    DescribeVpcsResult describeVpcsResult = client.describeVpcs(describeVpcsRequest);
-    HashMap<String, String> vpcNameId = new HashMap<>();
-    for (Vpc vpc : describeVpcsResult.getVpcs()) {
-      String id = vpc.getVpcId();
-      String name = "";
-      for (Tag tag : vpc.getTags()) {
-        if (tag.getKey().equals("Name")) {
-          name = tag.getValue();
+    try {
+        DescribeVpcsRequest describeVpcsRequest = new DescribeVpcsRequest();
+        DescribeVpcsResult describeVpcsResult = client.describeVpcs(describeVpcsRequest);
+        HashMap<String, String> vpcNameId = new HashMap<>();
+        for (Vpc vpc : describeVpcsResult.getVpcs()) {
+            String id = vpc.getVpcId();
+            String name = "";
+            for (Tag tag : vpc.getTags()) {
+                if (tag.getKey().equals("Name")) {
+                    name = tag.getValue();
+                }
+            }
+            vpcNameId.put(name, id);
         }
-      }
-      vpcNameId.put(name, id);
+        return vpcNameId;
+    } catch (AmazonClientException e) {
+        VimDriverException vimDriverException = new VimDriverException(e.getMessage());
+        throw vimDriverException;
     }
-    return vpcNameId;
   }
 
   @java.lang.Override
   public DeploymentFlavour addFlavor(VimInstance vimInstance, DeploymentFlavour deploymentFlavour)
       throws VimDriverException {
-    AmazonEC2 client = createClient(vimInstance);
     return null;
   }
 
@@ -713,24 +765,34 @@ public class AmazonDriver extends VimDriver {
 
   @java.lang.Override
   public boolean deleteNetwork(VimInstance vimInstance, String extId) throws VimDriverException {
-    AmazonEC2 client = createClient(vimInstance);
-    DeleteSubnetRequest req = new DeleteSubnetRequest().withSubnetId(extId);
-    DeleteSubnetResult res = client.deleteSubnet(req);
-    return true;
+      try {
+          AmazonEC2 client = createClient(vimInstance);
+          DeleteSubnetRequest req = new DeleteSubnetRequest().withSubnetId(extId);
+          DeleteSubnetResult res = client.deleteSubnet(req);
+          return true;
+      } catch (AmazonClientException e) {
+          VimDriverException vimDriverException = new VimDriverException(e.getMessage());
+          throw vimDriverException;
+      }
   }
 
   @java.lang.Override
   public Network getNetworkById(VimInstance vimInstance, String id) throws VimDriverException {
-    AmazonEC2 client = createClient(vimInstance);
-    Filter filter = new Filter();
-    filter.setName("subnet-id");
-    filter.setValues(Arrays.asList(id));
-    DescribeSubnetsRequest req = new DescribeSubnetsRequest().withFilters(filter);
-    DescribeSubnetsResult res = client.describeSubnets(req);
-    if (res.getSubnets().size() < 1) {
-      throw new VimDriverException("Network with id " + id + " does not exist");
-    }
-    return Utils.getNetworkFromSubnet(res.getSubnets().get(0));
+      AmazonEC2 client = createClient(vimInstance);
+      try {
+          Filter filter = new Filter();
+          filter.setName("subnet-id");
+          filter.setValues(Arrays.asList(id));
+          DescribeSubnetsRequest req = new DescribeSubnetsRequest().withFilters(filter);
+          DescribeSubnetsResult res = client.describeSubnets(req);
+          if (res.getSubnets().size() < 1) {
+              throw new VimDriverException("Network with id " + id + " does not exist");
+          }
+          return Utils.getNetworkFromSubnet(res.getSubnets().get(0));
+      } catch (AmazonClientException e) {
+          VimDriverException vimDriverException = new VimDriverException(e.getMessage());
+          throw vimDriverException;
+      }
   }
 
   @java.lang.Override
