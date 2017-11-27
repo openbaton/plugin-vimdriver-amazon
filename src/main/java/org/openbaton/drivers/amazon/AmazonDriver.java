@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.InvocationTargetException;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -58,9 +59,7 @@ public class AmazonDriver extends VimDriver {
   public static void main(String[] args)
       throws NoSuchMethodException, IOException, InstantiationException, TimeoutException,
           IllegalAccessException, InvocationTargetException, InterruptedException {
-
-
-    if (args.length == 4) {
+      if (args.length == 4) {
       log.info("Starting the plugin with CUSTOM parameters: ");
       log.info("name: " + args[0]);
       log.info("brokerIp: " + args[1]);
@@ -157,8 +156,6 @@ public class AmazonDriver extends VimDriver {
       }
       log.info("Found the VPC ID: " + vpcId);
       byte[] encodedData = Base64.encodeBase64(changeUserData.getBytes());
-      DescribeVpcsRequest describeVpcsRequest = new DescribeVpcsRequest();
-      DescribeVpcsResult describeVpcsResult = client.describeVpcs(describeVpcsRequest);
       List<DeploymentFlavour> flavours = listFlavors(vimInstance);
       log.info("Listed flavours");
       List<Network> presentSubnets = listNetworks(vimInstance);
@@ -168,7 +165,7 @@ public class AmazonDriver extends VimDriver {
       log.info("Retrieved security ids");
       int deviceIndex = 0;
       for (Network net : searchForRelevantSubnets(presentSubnets, newNetworks)) {
-        inters.add(createInterface(net, deviceIndex, newNetworks, groupIds));
+        inters.add(createInterface(net, deviceIndex, groupIds));
         deviceIndex++;
         log.info("Interface " + deviceIndex);
       }
@@ -212,12 +209,32 @@ public class AmazonDriver extends VimDriver {
           new ModifyInstanceAttributeRequest().withGroups(groupIds).withInstanceId(id);
       log.info("Assigning security groups to instance " + id);
       ModifyInstanceAttributeResult groupRes = client.modifyInstanceAttribute(groupsReq);*/
-      List<Server> servers = listServer(vimInstance);
-      for (Server ser : servers) {
-        if (ser.getHostName().equals(name)) {
-          server = ser;
-        }
+      boolean ready = false;
+      while (!ready) {
+          List<Server> servers = listServer(vimInstance);
+          for (Server ser : servers) {
+              if (ser != null && ser.getHostName().equals(name) && ser.getStatus().equals("running")) {
+                  server = ser;
+                  ready = true;
+
+              }
+              try {
+                  TimeUnit.SECONDS.sleep(7);
+              } catch (InterruptedException e) {
+                  e.printStackTrace();
+              }
+          }
       }
+        DescribeAddressesRequest addReq = new DescribeAddressesRequest();
+        DescribeAddressesResult re = client.describeAddresses(addReq);
+        int i = 0;
+        while (re.getAddresses().get(i).getAssociationId() != null) {
+            i++;
+        }
+        AssociateAddressRequest addrReq = new AssociateAddressRequest().withNetworkInterfaceId(listIntrefaceByAttachment(client, server.getExtId()).get(0).getNetworkInterfaceId())
+                    .withAllocationId(re.getAddresses().get(i).getAllocationId()).withAllowReassociation(false);
+        client.associateAddress(addrReq);
+
 
     } catch (VimException e) {
       log.error(e.getMessage(), e);
@@ -234,6 +251,35 @@ public class AmazonDriver extends VimDriver {
     return server;
   }
 
+  private List<NetworkInterface> listIntrefaceByAttachment(AmazonEC2 client, String instanceId) {
+      Filter filter = new Filter();
+      filter.setName("attachment.instance-id");
+      filter.setValues(Collections.singletonList(instanceId));
+      Filter filter1 = new Filter();
+      filter1.setName("attachment.device-index");
+      filter1.setValues(Collections.singletonList("0"));
+      DescribeNetworkInterfacesRequest req = new DescribeNetworkInterfacesRequest().withFilters(Arrays.asList(filter, filter1));
+      DescribeNetworkInterfacesResult res = client.describeNetworkInterfaces(req);
+      return res.getNetworkInterfaces();
+  }
+  private List<InternetGateway> getInternetGatewaysByVPC(AmazonEC2 client, String vpcId) {
+      Filter filter = new Filter();
+      filter.setName("attachment.vpc-id");
+      filter.setValues(Collections.singletonList(vpcId));
+      DescribeInternetGatewaysRequest request = new DescribeInternetGatewaysRequest();
+      request.setFilters(Collections.singletonList(filter));
+      DescribeInternetGatewaysResult result = client.describeInternetGateways(request);
+      return result.getInternetGateways();
+  }
+
+  private InternetGateway createAndAttachInternetGateway(AmazonEC2 client, String vpcId) {
+      CreateInternetGatewayRequest request = new CreateInternetGatewayRequest();
+      CreateInternetGatewayResult result = client.createInternetGateway(request);
+      InternetGateway gateway = result.getInternetGateway();
+      AttachInternetGatewayRequest attach = new AttachInternetGatewayRequest().withVpcId(vpcId).withInternetGatewayId(gateway.getInternetGatewayId());
+      client.attachInternetGateway(attach);
+      return gateway;
+  }
 
   /**
    * Checks if the image exists inside AWS and returns its ID
@@ -269,26 +315,25 @@ public class AmazonDriver extends VimDriver {
    *
    * @param net subnet inside AWS represented through NFVO network
    * @param deviceIndex device index for the interface is required by AWS
-   * @param cps VNFD connection points
    * @return the list of interfaces
    */
   private InstanceNetworkInterfaceSpecification createInterface(
-      Network net, int deviceIndex, Set<VNFDConnectionPoint> cps, Set<String> secIDs) {
-    InstanceNetworkInterfaceSpecification interSpec =
-        new InstanceNetworkInterfaceSpecification()
-            .withDeleteOnTermination(true)
-            .withSubnetId(net.getExtId())
-            .withDeviceIndex(deviceIndex).withGroups(secIDs);
-    String floatingIp = "";
+      Network net, int deviceIndex, Set<String> secIDs) {
+          InstanceNetworkInterfaceSpecification interSpec =
+                  new InstanceNetworkInterfaceSpecification()
+                          .withDeleteOnTermination(true)
+                          .withSubnetId(net.getExtId())
+                          .withGroups(secIDs).withDeviceIndex(deviceIndex);
+          log.info("Device index" + deviceIndex);
+          return interSpec;
+
+    /*String floatingIp = "";
     for (VNFDConnectionPoint cp : cps) {
       if (net.getName().equals(cp.getVirtual_link_reference())) {
         floatingIp = cp.getFloatingIp();
       }
-    }
-    if (floatingIp != null) {
-      interSpec.setAssociatePublicIpAddress(true);
-    }
-    return interSpec;
+    }*/
+
   }
 
   /**
