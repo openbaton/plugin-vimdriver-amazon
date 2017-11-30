@@ -59,7 +59,8 @@ public class AmazonDriver extends VimDriver {
   public static void main(String[] args)
       throws NoSuchMethodException, IOException, InstantiationException, TimeoutException,
           IllegalAccessException, InvocationTargetException, InterruptedException {
-      if (args.length == 4) {
+
+    if (args.length == 4) {
       log.info("Starting the plugin with CUSTOM parameters: ");
       log.info("name: " + args[0]);
       log.info("brokerIp: " + args[1]);
@@ -205,37 +206,14 @@ public class AmazonDriver extends VimDriver {
       tags.add(tag);
       CreateTagsRequest tagsRequest = new CreateTagsRequest().withTags(tags).withResources(id);
       client.createTags(tagsRequest);
-      /*ModifyInstanceAttributeRequest groupsReq =
-          new ModifyInstanceAttributeRequest().withGroups(groupIds).withInstanceId(id);
-      log.info("Assigning security groups to instance " + id);
-      ModifyInstanceAttributeResult groupRes = client.modifyInstanceAttribute(groupsReq);*/
-      boolean ready = false;
-      while (!ready) {
-          List<Server> servers = listServer(vimInstance);
-          for (Server ser : servers) {
-              if (ser != null && ser.getHostName().equals(name) && ser.getStatus().equals("running")) {
-                  server = ser;
-                  ready = true;
-
-              }
-              try {
-                  TimeUnit.SECONDS.sleep(7);
-              } catch (InterruptedException e) {
-                  e.printStackTrace();
-              }
-          }
-      }
-        DescribeAddressesRequest addReq = new DescribeAddressesRequest();
-        DescribeAddressesResult re = client.describeAddresses(addReq);
-        int i = 0;
-        while (re.getAddresses().get(i).getAssociationId() != null) {
-            i++;
+      server = waitForInstance(name, vimInstance);
+      setupInstanceNetwork(client, server);
+      List<Server> servers = listServer(vimInstance);
+        for (Server ser : servers) {
+            if (ser != null && ser.getHostName().equals(name)) {
+                server = ser;
+            }
         }
-        AssociateAddressRequest addrReq = new AssociateAddressRequest().withNetworkInterfaceId(listIntrefaceByAttachment(client, server.getExtId()).get(0).getNetworkInterfaceId())
-                    .withAllocationId(re.getAddresses().get(i).getAllocationId()).withAllowReassociation(false);
-        client.associateAddress(addrReq);
-
-
     } catch (VimException e) {
       log.error(e.getMessage(), e);
       VimDriverException vimDriverException = new VimDriverException(e.getMessage());
@@ -246,19 +224,82 @@ public class AmazonDriver extends VimDriver {
     } catch (AmazonClientException e) {
       VimDriverException vimDriverException = new VimDriverException(e.getMessage());
       throw vimDriverException;
+    } catch (InterruptedException e) {
+        throw new VimDriverException(e.getMessage());
     }
     log.info("Instance " + name + " launched");
     return server;
   }
 
-  private List<NetworkInterface> listIntrefaceByAttachment(AmazonEC2 client, String instanceId) {
+  private Server waitForInstance(String name, VimInstance vimInstance) throws VimDriverException, InterruptedException {
+      int timeOut = Integer.parseInt(properties.getProperty("launchTimeout"));
+      log.info("Waiting for instance. LaunchTimeout is " + timeOut);
+      int waitTime = 4;
+      while (waitTime < timeOut) {
+          List<Server> servers = listServer(vimInstance);
+          for (Server ser : servers) {
+              if (ser != null && ser.getHostName().equals(name) && ser.getStatus().equals("running")) {
+                  return ser;
+              }
+              try {
+                  TimeUnit.SECONDS.sleep(waitTime);
+                  waitTime = waitTime * 2;
+              } catch (InterruptedException e) {
+                  e.printStackTrace();
+              }
+          }
+      }
+      throw new VimDriverException("Launch Timeout reached, seems that the instance never went into running status");
+  }
+
+  private void setupInstanceNetwork(AmazonEC2 client, Server server) {
+      List<Address> freeAddresses = getUnallocatedAddresses(client);
+      List<NetworkInterface> instanceInterfaces = listInterfaceByAttachment(client, server.getExtId());
+
+      if (freeAddresses.size() < instanceInterfaces.size()) {
+          allocateElasticIps(client, instanceInterfaces.size() - freeAddresses.size());
+      }
+      freeAddresses = getUnallocatedAddresses(client);
+      int i = 0;
+      for (NetworkInterface inter: instanceInterfaces) {
+          AssociateAddressRequest addrReq = new AssociateAddressRequest().withNetworkInterfaceId(inter.getNetworkInterfaceId())
+                  .withAllocationId(freeAddresses.get(i).getAllocationId()).withAllowReassociation(false);
+          client.associateAddress(addrReq);
+          i++;
+      }
+  }
+
+  private void allocateElasticIps(AmazonEC2 client, int number) {
+      log.info("Allocating " + number + " elastic ips");
+      AllocateAddressRequest req = new AllocateAddressRequest();
+      for (int i = 0; i < number; i++) {
+          client.allocateAddress(req);
+      }
+  }
+
+  private List<Address> getUnallocatedAddresses(AmazonEC2 client) {
+      DescribeAddressesRequest addReq = new DescribeAddressesRequest();
+      DescribeAddressesResult re = client.describeAddresses(addReq);
+      List<Address> unAllockAddrs = new ArrayList<>();
+      for (Address addr: re.getAddresses()) {
+          if (addr.getAssociationId() == null) {
+              unAllockAddrs.add(addr);
+          }
+      }
+      return unAllockAddrs;
+
+  }
+
+  private List<NetworkInterface> listInterfaceByAttachment(AmazonEC2 client, String instanceId) {
       Filter filter = new Filter();
       filter.setName("attachment.instance-id");
       filter.setValues(Collections.singletonList(instanceId));
       Filter filter1 = new Filter();
-      filter1.setName("attachment.device-index");
-      filter1.setValues(Collections.singletonList("0"));
-      DescribeNetworkInterfacesRequest req = new DescribeNetworkInterfacesRequest().withFilters(Arrays.asList(filter, filter1));
+//      filter1.setName("attachment.device-index");
+//      filter1.setValues(Collections.singletonList("0"));
+//
+//      DescribeNetworkInterfacesRequest req = new DescribeNetworkInterfacesRequest().withFilters(Arrays.asList(filter, filter1));
+      DescribeNetworkInterfacesRequest req = new DescribeNetworkInterfacesRequest().withFilters(Collections.singletonList(filter));
       DescribeNetworkInterfacesResult res = client.describeNetworkInterfaces(req);
       return res.getNetworkInterfaces();
   }
