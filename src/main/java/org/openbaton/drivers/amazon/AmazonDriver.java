@@ -40,6 +40,9 @@ import org.apache.commons.codec.binary.Base64;
 import org.openbaton.catalogue.mano.common.DeploymentFlavour;
 import org.openbaton.catalogue.mano.descriptor.VNFDConnectionPoint;
 import org.openbaton.catalogue.nfvo.*;
+import org.openbaton.catalogue.nfvo.viminstances.BaseVimInstance;
+import org.openbaton.catalogue.nfvo.viminstances.AmazonVimInstance;
+import org.openbaton.catalogue.nfvo.networks.AWSNetwork;
 import org.openbaton.catalogue.security.Key;
 import org.openbaton.exceptions.VimDriverException;
 import org.openbaton.exceptions.VimException;
@@ -59,6 +62,8 @@ public class AmazonDriver extends VimDriver {
   public static void main(String[] args)
       throws NoSuchMethodException, IOException, InstantiationException, TimeoutException,
           IllegalAccessException, InvocationTargetException, InterruptedException {
+
+
 
     if (args.length == 4) {
       log.info("Starting the plugin with CUSTOM parameters: ");
@@ -108,7 +113,7 @@ public class AmazonDriver extends VimDriver {
    * @return amazonEc2 client ready to handle requests
    * @throws VimDriverException if one of the arguments is not correctly set
    */
-  private AmazonEC2 createClient(VimInstance vimInstance) throws VimDriverException {
+  private AmazonEC2 createClient(AmazonVimInstance vimInstance) throws VimDriverException {
     BasicAWSCredentials awsCreds =
         new BasicAWSCredentials(vimInstance.getUsername(), vimInstance.getPassword());
     Regions regions;
@@ -130,7 +135,7 @@ public class AmazonDriver extends VimDriver {
 
   @java.lang.Override
   public Server launchInstance(
-      VimInstance vimInstance,
+      BaseVimInstance vimInstance,
       String name,
       String image,
       String flavor,
@@ -145,7 +150,7 @@ public class AmazonDriver extends VimDriver {
     try {
       String changeUserData = changeHostname(userData, name);
       log.info(changeUserData);
-      AmazonEC2 client = createClient(vimInstance);
+      AmazonEC2 client = createClient((AmazonVimInstance) vimInstance);
       Gson gson = new Gson();
       String oldVNFDCP = gson.toJson(networks);
       Set<VNFDConnectionPoint> newNetworks =
@@ -207,6 +212,7 @@ public class AmazonDriver extends VimDriver {
       CreateTagsRequest tagsRequest = new CreateTagsRequest().withTags(tags).withResources(id);
       client.createTags(tagsRequest);
       server = waitForInstance(name, vimInstance);
+      log.info("Instance is up, handling networking");
       setupInstanceNetwork(client, server);
       List<Server> servers = listServer(vimInstance);
         for (Server ser : servers) {
@@ -231,7 +237,46 @@ public class AmazonDriver extends VimDriver {
     return server;
   }
 
-  private Server waitForInstance(String name, VimInstance vimInstance) throws VimDriverException, InterruptedException {
+  @Override
+  public BaseVimInstance refresh(BaseVimInstance vimInstance) throws VimDriverException {
+      AmazonVimInstance amazon = (AmazonVimInstance) vimInstance;
+      List<AWSImage> newImages = listImages(vimInstance);
+      if (amazon.getImages() == null) {
+          amazon.setImages(new HashSet<>());
+      }
+      amazon.getImages().clear();
+      amazon.addAllImages(newImages);
+
+      List<BaseNetwork> newNetworks = listNetworks(vimInstance);
+
+      if (amazon.getNetworks() == null) {
+          amazon.setNetworks(new HashSet<>());
+      }
+      amazon.getNetworks().clear();
+      amazon.addAllNetworks(newNetworks);
+
+      List<DeploymentFlavour> newFlavors = listFlavors(vimInstance);
+      if (amazon.getFlavours() == null) {
+          amazon.setFlavours(new HashSet<>());
+      }
+      amazon.getFlavours().clear();
+      amazon.getFlavours().addAll(newFlavors);
+
+      List<org.openbaton.catalogue.nfvo.viminstances.AvailabilityZone> newAvalabilityZones =
+              listAvailabilityZone(vimInstance);
+      if (amazon.getZones() == null) {
+          amazon.setZones(new HashSet<>());
+      }
+      amazon.getZones().clear();
+      amazon.getZones().addAll(newAvalabilityZones);
+
+      amazon.setVpcId(getVpcsMap(amazon).get(vimInstance.getVpcName());
+
+      return amazon;
+  }
+
+
+  private Server waitForInstance(String name, BaseVimInstance vimInstance) throws VimDriverException, InterruptedException {
       int timeOut = Integer.parseInt(properties.getProperty("launchTimeout"));
       log.info("Waiting for instance. LaunchTimeout is " + timeOut);
       int waitTime = 4;
@@ -425,8 +470,8 @@ public class AmazonDriver extends VimDriver {
    *     does not exits
    */
   private Set<String> getSecurityIdFromName(
-      Set<String> groupNames, AmazonEC2 client, VimInstance vimInstance) throws VimDriverException, AmazonClientException {
-    String vpcId = getVpcsMap(vimInstance).get(vimInstance.getTenant());
+      Set<String> groupNames, AmazonEC2 client, BaseVimInstance vimInstance) throws VimDriverException, AmazonClientException {
+    String vpcId = ((AmazonVimInstance) vimInstance).getVpcId;
     if (vpcId == null) {
       throw new VimDriverException("No such VPC " + vimInstance.getTenant() + " exists");
     }
@@ -456,9 +501,9 @@ public class AmazonDriver extends VimDriver {
   }
 
   @java.lang.Override
-  public java.util.List<NFVImage> listImages(VimInstance vimInstance) throws VimDriverException {
+  public java.util.List<AWSImage> listImages(BaseVimInstance vimInstance) throws VimDriverException {
       try {
-          AmazonEC2 client = createClient(vimInstance);
+          AmazonEC2 client = createClient((AmazonVimInstance) vimInstance);
           String keyWord = properties.getProperty("image-key-word", "*");
           String keyWords[] = keyWord.split(",");
           for (int i = 0; i < keyWords.length; i++) {
@@ -470,7 +515,7 @@ public class AmazonDriver extends VimDriver {
           DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
           describeImagesRequest.setFilters(Arrays.asList(filter));
           DescribeImagesResult describeImagesResult = client.describeImages(describeImagesRequest);
-          List<NFVImage> images = new ArrayList<>();
+          List<AWSImage> images = new ArrayList<>();
           for (Image image : describeImagesResult.getImages()) {
               images.add(Utils.getImage(image));
           }
@@ -492,13 +537,14 @@ public class AmazonDriver extends VimDriver {
   }
 
   @java.lang.Override
-  public java.util.List<Server> listServer(VimInstance vimInstance) throws VimDriverException {
+  public java.util.List<Server> listServer(BaseVimInstance vimInstanceBase) throws VimDriverException {
+      AmazonVimInstance vimInstance = (AmazonVimInstance) vimInstanceBase;
       try {
           List<Server> servers = new ArrayList<>();
           AmazonEC2 client = createClient(vimInstance);
-          String vpcId = getVpcsMap(vimInstance).get(vimInstance.getTenant());
+          String vpcId = getVpcsMap(vimInstance).get(vimInstance.getVpcName());
           if (vpcId == null) {
-              throw new VimDriverException("No such VPC " + vimInstance.getTenant() + " exists");
+              throw new VimDriverException("No such VPC " + vimInstance.getVpcName() + " exists");
           }
           Filter filter = new Filter();
           filter.setName("vpc-id");

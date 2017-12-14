@@ -2,15 +2,12 @@ package org.openbaton.drivers.amazon;
 
 import com.amazonaws.services.ec2.model.*;
 import java.util.*;
-import org.openbaton.catalogue.nfvo.NFVImage;
-import org.openbaton.catalogue.nfvo.Network;
+import org.openbaton.catalogue.nfvo.images.AWSImage;
 import org.openbaton.catalogue.nfvo.Server;
-import org.openbaton.catalogue.nfvo.Subnet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 class Utils {
-  private static Logger log = LoggerFactory.getLogger(Utils.class);
 
   static org.openbaton.catalogue.nfvo.Server getServer(Instance instance, List<Network> nets) {
     Server server = new Server();
@@ -100,13 +97,15 @@ class Utils {
     return nfvoNetwork;
   }
 
-  static org.openbaton.catalogue.nfvo.NFVImage getImage(
+  static org.openbaton.catalogue.nfvo.images.AWSImage getImage(
       com.amazonaws.services.ec2.model.Image image) {
-    NFVImage nfvoImage = new NFVImage();
-    nfvoImage.setName(image.getName());
-    nfvoImage.setExtId(image.getImageId());
-    nfvoImage.setDiskFormat(image.getImageType());
-    nfvoImage.setStatus("ACTIVE");
+    AWSImage nfvoImage = new AWSImage();
+    AWSImage.setName(image.getName());
+    AWSImage.setExtId(image.getImageId());
+    AWSImage.setHypervisor(image.getHypervisor());
+    AWSImage.setDescripton(image.getDescription());
+    AWSImage.setImageOwner(image.getImageOwnerAlias());
+    AWSImage.setPublic(image.getPublic());
     return nfvoImage;
   }
 }
