@@ -4,12 +4,15 @@ import com.amazonaws.services.ec2.model.*;
 import java.util.*;
 import org.openbaton.catalogue.nfvo.images.AWSImage;
 import org.openbaton.catalogue.nfvo.Server;
+import org.openbaton.catalogue.nfvo.networks.AWSNetwork;
+import org.openbaton.catalogue.nfvo.networks.BaseNetwork;
+import org.openbaton.catalogue.nfvo.networks.Network;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 class Utils {
 
-  static org.openbaton.catalogue.nfvo.Server getServer(Instance instance, List<Network> nets) {
+  static org.openbaton.catalogue.nfvo.Server getServer(Instance instance, List<BaseNetwork> nets) {
     Server server = new Server();
     server.setExtId(instance.getInstanceId());
     server.setStatus(instance.getState().getName());
@@ -25,12 +28,12 @@ class Utils {
       }
     }
     HashMap<String, String> netNameId = new HashMap<>();
-    for (Network net : nets) {
+    for (BaseNetwork net : nets) {
       netNameId.put(net.getExtId(), net.getName());
     }
     String primarySubnetId = instance.getSubnetId();
     String primarySubnetName = "";
-    for (Network net : nets) {
+    for (BaseNetwork net : nets) {
       if (net.getExtId().equals(primarySubnetId)) {
         primarySubnetName = net.getName();
       }
@@ -78,34 +81,33 @@ class Utils {
    * @param subnet aws subnet
    * @return created nfvo network
    */
-  static org.openbaton.catalogue.nfvo.Network getNetworkFromSubnet(
+  static org.openbaton.catalogue.nfvo.networks.AWSNetwork getNetworkFromSubnet(
       com.amazonaws.services.ec2.model.Subnet subnet) {
-    Network nfvoNetwork = new Network();
+    AWSNetwork nfvoNetwork = new AWSNetwork();
     nfvoNetwork.setExtId(subnet.getSubnetId());
     for (Tag tag : subnet.getTags()) {
       if (tag.getKey().equals("Name")) {
         nfvoNetwork.setName(tag.getValue());
       }
     }
-    Set<org.openbaton.catalogue.nfvo.Subnet> subs = new HashSet<>();
-    Subnet sub = new Subnet();
-    sub.setExtId(subnet.getSubnetId());
-    sub.setCidr(subnet.getCidrBlock());
-    sub.setNetworkId(subnet.getSubnetId());
-    subs.add(sub);
-    nfvoNetwork.setSubnets(subs);
+    nfvoNetwork.setIpv4cidr(subnet.getCidrBlock());
+    nfvoNetwork.setAvZone(subnet.getAvailabilityZone());
+    nfvoNetwork.setExtId(subnet.getSubnetId());
+    nfvoNetwork.setVpcId(subnet.getVpcId());
+    nfvoNetwork.setState(subnet.getState());
+    nfvoNetwork.setDef(subnet.getDefaultForAz());
     return nfvoNetwork;
   }
 
   static org.openbaton.catalogue.nfvo.images.AWSImage getImage(
       com.amazonaws.services.ec2.model.Image image) {
     AWSImage nfvoImage = new AWSImage();
-    AWSImage.setName(image.getName());
-    AWSImage.setExtId(image.getImageId());
-    AWSImage.setHypervisor(image.getHypervisor());
-    AWSImage.setDescripton(image.getDescription());
-    AWSImage.setImageOwner(image.getImageOwnerAlias());
-    AWSImage.setPublic(image.getPublic());
+    nfvoImage.setName(image.getName());
+    nfvoImage.setExtId(image.getImageId());
+    nfvoImage.setHypervisor(image.getHypervisor());
+    nfvoImage.setDescription(image.getDescription());
+    nfvoImage.setImageOwner(image.getImageOwnerAlias());
+    nfvoImage.setPublic(image.getPublic());
     return nfvoImage;
   }
 }
