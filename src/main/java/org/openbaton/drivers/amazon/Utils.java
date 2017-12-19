@@ -4,6 +4,7 @@ import com.amazonaws.services.ec2.model.*;
 import java.util.*;
 import org.openbaton.catalogue.nfvo.images.AWSImage;
 import org.openbaton.catalogue.nfvo.Server;
+import org.openbaton.catalogue.nfvo.images.NFVImage;
 import org.openbaton.catalogue.nfvo.networks.AWSNetwork;
 import org.openbaton.catalogue.nfvo.networks.BaseNetwork;
 import org.openbaton.catalogue.nfvo.networks.Network;
@@ -18,6 +19,9 @@ class Utils {
     server.setStatus(instance.getState().getName());
     server.setHypervisorHostName(instance.getHypervisor());
     server.setCreated(instance.getLaunchTime());
+    NFVImage image = new NFVImage();
+    image.setExtId(instance.getImageId());
+    server.setImage(image);
     if (instance.getTags() != null) {
       for (Tag tag : instance.getTags()) {
         if (tag.getKey().equals("Name")) {

@@ -69,7 +69,8 @@ public class AmazonDriver extends VimDriver {
 
 
 
-    if (args.length == 4) {
+
+     if (args.length == 4) {
       log.info("Starting the plugin with CUSTOM parameters: ");
       log.info("name: " + args[0]);
       log.info("brokerIp: " + args[1]);
@@ -123,7 +124,7 @@ public class AmazonDriver extends VimDriver {
     Regions regions;
     AmazonEC2 client;
     try {
-      regions = Regions.fromName(vimInstance.getLocation().getName());
+      regions = Regions.fromName(vimInstance.getRegion());
       client =
           AmazonEC2ClientBuilder.standard()
               .withRegion(regions)
@@ -249,7 +250,7 @@ public class AmazonDriver extends VimDriver {
       if (amazon.getImages() == null) {
           amazon.setImages(new HashSet<>());
       }
-      amazon.getImages().clear();
+      amazon.removeAllImages();
       amazon.addAllImages(newImages);
 
       List<BaseNetwork> newNetworks = listNetworks(vimInstance);
@@ -257,11 +258,17 @@ public class AmazonDriver extends VimDriver {
       if (amazon.getNetworks() == null) {
           amazon.setNetworks(new HashSet<>());
       }
-      amazon.getNetworks().clear();
+      amazon.removeAllNetworks();
       amazon.addAllNetworks(newNetworks);
       amazon.setVpcId(getVpcsMap(amazon).get(amazon.getVpcName()));
 
-      return amazon;
+      List<DeploymentFlavour> newFlavors = listFlavors(vimInstance);
+      if (amazon.getFlavours() == null) {
+          amazon.setFlavours(new HashSet<>());
+      }
+      amazon.removeAllFlavours();
+      amazon.addAllFlavours(newFlavors);
+      return (BaseVimInstance) amazon;
   }
 
 
@@ -453,14 +460,15 @@ public class AmazonDriver extends VimDriver {
    *
    * @param groupNames Group names that come from NFVO
    * @param client ec2 client
-   * @param vimInstance vim description
+   * @param vimInstanceBase vim description
    * @return list of the security groups ids
    * @throws VimDriverException in case there is no VPC with such name or one of the security groups
    *     does not exits
    */
   private Set<String> getSecurityIdFromName(
-      Set<String> groupNames, AmazonEC2 client, BaseVimInstance vimInstance) throws VimDriverException, AmazonClientException {
-    String vpcId = ((AmazonVimInstance) vimInstance).getVpcId();
+      Set<String> groupNames, AmazonEC2 client, BaseVimInstance vimInstanceBase) throws VimDriverException, AmazonClientException {
+      AmazonVimInstance vimInstance = (AmazonVimInstance) vimInstanceBase;
+      String vpcId = getVpcsMap(vimInstance).get(vimInstance.getVpcName());
     if (vpcId == null) {
       throw new VimDriverException("No such VPC " + ((AmazonVimInstance) vimInstance).getVpcName() + " exists");
     }
