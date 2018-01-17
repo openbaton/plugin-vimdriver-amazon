@@ -2,14 +2,11 @@ package org.openbaton.drivers.amazon;
 
 import com.amazonaws.services.ec2.model.*;
 import java.util.*;
-import org.openbaton.catalogue.nfvo.images.AWSImage;
 import org.openbaton.catalogue.nfvo.Server;
+import org.openbaton.catalogue.nfvo.images.AWSImage;
 import org.openbaton.catalogue.nfvo.images.NFVImage;
 import org.openbaton.catalogue.nfvo.networks.AWSNetwork;
 import org.openbaton.catalogue.nfvo.networks.BaseNetwork;
-import org.openbaton.catalogue.nfvo.networks.Network;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 class Utils {
 
@@ -80,7 +77,8 @@ class Utils {
    * Converts aws subnet to nfvo network
    *
    * <p>AWS EC2 VPCs do not have internal networks. Subnet is converted to network with one subnet
-   * in order to map the resource as precisely as possible
+   * in order to map the resource as precisely as possible Is the subnet has not name tag, which is allowed
+   * in AWS the id will be assigned to name to ensure consistency
    *
    * @param subnet aws subnet
    * @return created nfvo network
@@ -93,6 +91,9 @@ class Utils {
       if (tag.getKey().equals("Name")) {
         nfvoNetwork.setName(tag.getValue());
       }
+    }
+    if (nfvoNetwork.getName() == null || nfvoNetwork.getName().isEmpty() || nfvoNetwork.equals("")) {
+      nfvoNetwork.setName(subnet.getSubnetId());
     }
     nfvoNetwork.setIpv4cidr(subnet.getCidrBlock());
     nfvoNetwork.setAvZone(subnet.getAvailabilityZone());
