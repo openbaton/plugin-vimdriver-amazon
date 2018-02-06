@@ -64,7 +64,6 @@ public class AmazonDriver extends VimDriver {
   public static void main(String[] args)
       throws NoSuchMethodException, IOException, InstantiationException, TimeoutException,
           IllegalAccessException, InvocationTargetException, InterruptedException {
-
     if (args.length == 4) {
       log.info("Starting the plugin with CUSTOM parameters: ");
       log.info("name: " + args[0]);
@@ -333,6 +332,12 @@ public class AmazonDriver extends VimDriver {
     return unAllockAddrs;
   }
 
+  /**
+   * Get the interfaces attached to a certain VM
+   * @param client amazonec2 client
+   * @param instanceId id of the vm
+   * @return list of interfaces
+   */
   private List<NetworkInterface> listInterfaceByAttachment(AmazonEC2 client, String instanceId) {
     Filter filter = new Filter();
     filter.setName("attachment.instance-id");
@@ -359,11 +364,11 @@ public class AmazonDriver extends VimDriver {
   }
 
   /**
-   * Creates the internet gateway in a particaular vpc
+   * Creates the internet gateway in a particular vpc
    *
    * @param client amazon client to make calls to api
    * @param vpcId the id of the VPC where gateway should be attached
-   * @return
+   * @return createdgateway data
    */
   private InternetGateway createAndAttachInternetGateway(AmazonEC2 client, String vpcId) {
     CreateInternetGatewayRequest request = new CreateInternetGatewayRequest();
