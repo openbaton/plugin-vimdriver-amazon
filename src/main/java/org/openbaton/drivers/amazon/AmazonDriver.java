@@ -622,6 +622,11 @@ public class AmazonDriver extends VimDriver {
     }
   }
 
+  @Override
+  public Server rebuildServer(BaseVimInstance vimInstance, String serverId, String imageId) throws VimDriverException {
+    return null;
+  }
+
   @java.lang.Override
   public List<BaseNetwork> listNetworks(BaseVimInstance vimInstanceBase) throws VimDriverException {
     log.info("Listing networks");

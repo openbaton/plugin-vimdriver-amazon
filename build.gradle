@@ -87,8 +87,8 @@ dependencies {
 
     compile group: 'com.amazonaws', name: 'aws-java-sdk', version: '1.11.218'
 
-    compile 'org.slf4j:slf4j-api:1.7.12'
-    compile 'org.slf4j:slf4j-simple:1.7.12'
+    compile 'org.slf4j:slf4j-api:1.7.25'
+    compile 'org.slf4j:slf4j-simple:1.7.25'
 
     testCompile("junit:junit:4.12")
 
