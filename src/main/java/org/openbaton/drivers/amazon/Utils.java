@@ -2,22 +2,23 @@ package org.openbaton.drivers.amazon;
 
 import com.amazonaws.services.ec2.model.*;
 import java.util.*;
-import org.openbaton.catalogue.nfvo.NFVImage;
-import org.openbaton.catalogue.nfvo.Network;
 import org.openbaton.catalogue.nfvo.Server;
-import org.openbaton.catalogue.nfvo.Subnet;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.openbaton.catalogue.nfvo.images.AWSImage;
+import org.openbaton.catalogue.nfvo.images.NFVImage;
+import org.openbaton.catalogue.nfvo.networks.AWSNetwork;
+import org.openbaton.catalogue.nfvo.networks.BaseNetwork;
 
 class Utils {
-  private static Logger log = LoggerFactory.getLogger(Utils.class);
 
-  static org.openbaton.catalogue.nfvo.Server getServer(Instance instance, List<Network> nets) {
+  static org.openbaton.catalogue.nfvo.Server getServer(Instance instance, List<BaseNetwork> nets) {
     Server server = new Server();
     server.setExtId(instance.getInstanceId());
     server.setStatus(instance.getState().getName());
     server.setHypervisorHostName(instance.getHypervisor());
     server.setCreated(instance.getLaunchTime());
+    NFVImage image = new NFVImage();
+    image.setExtId(instance.getImageId());
+    server.setImage(image);
     if (instance.getTags() != null) {
       for (Tag tag : instance.getTags()) {
         if (tag.getKey().equals("Name")) {
@@ -28,12 +29,12 @@ class Utils {
       }
     }
     HashMap<String, String> netNameId = new HashMap<>();
-    for (Network net : nets) {
+    for (BaseNetwork net : nets) {
       netNameId.put(net.getExtId(), net.getName());
     }
     String primarySubnetId = instance.getSubnetId();
     String primarySubnetName = "";
-    for (Network net : nets) {
+    for (BaseNetwork net : nets) {
       if (net.getExtId().equals(primarySubnetId)) {
         primarySubnetName = net.getName();
       }
@@ -76,37 +77,42 @@ class Utils {
    * Converts aws subnet to nfvo network
    *
    * <p>AWS EC2 VPCs do not have internal networks. Subnet is converted to network with one subnet
-   * in order to map the resource as precisely as possible
+   * in order to map the resource as precisely as possible Is the subnet has not name tag, which is allowed
+   * in AWS the id will be assigned to name to ensure consistency
    *
    * @param subnet aws subnet
    * @return created nfvo network
    */
-  static org.openbaton.catalogue.nfvo.Network getNetworkFromSubnet(
+  static org.openbaton.catalogue.nfvo.networks.AWSNetwork getNetworkFromSubnet(
       com.amazonaws.services.ec2.model.Subnet subnet) {
-    Network nfvoNetwork = new Network();
+    AWSNetwork nfvoNetwork = new AWSNetwork();
     nfvoNetwork.setExtId(subnet.getSubnetId());
     for (Tag tag : subnet.getTags()) {
       if (tag.getKey().equals("Name")) {
         nfvoNetwork.setName(tag.getValue());
       }
     }
-    Set<org.openbaton.catalogue.nfvo.Subnet> subs = new HashSet<>();
-    Subnet sub = new Subnet();
-    sub.setExtId(subnet.getSubnetId());
-    sub.setCidr(subnet.getCidrBlock());
-    sub.setNetworkId(subnet.getSubnetId());
-    subs.add(sub);
-    nfvoNetwork.setSubnets(subs);
+    if (nfvoNetwork.getName() == null || nfvoNetwork.getName().isEmpty() || nfvoNetwork.equals("")) {
+      nfvoNetwork.setName(subnet.getSubnetId());
+    }
+    nfvoNetwork.setIpv4cidr(subnet.getCidrBlock());
+    nfvoNetwork.setAvZone(subnet.getAvailabilityZone());
+    nfvoNetwork.setExtId(subnet.getSubnetId());
+    nfvoNetwork.setVpcId(subnet.getVpcId());
+    nfvoNetwork.setState(subnet.getState());
+    nfvoNetwork.setDef(subnet.getDefaultForAz());
     return nfvoNetwork;
   }
 
-  static org.openbaton.catalogue.nfvo.NFVImage getImage(
+  static org.openbaton.catalogue.nfvo.images.AWSImage getImage(
       com.amazonaws.services.ec2.model.Image image) {
-    NFVImage nfvoImage = new NFVImage();
+    AWSImage nfvoImage = new AWSImage();
     nfvoImage.setName(image.getName());
     nfvoImage.setExtId(image.getImageId());
-    nfvoImage.setDiskFormat(image.getImageType());
-    nfvoImage.setStatus("ACTIVE");
+    nfvoImage.setHypervisor(image.getHypervisor());
+    nfvoImage.setDescription(image.getDescription());
+    nfvoImage.setImageOwner(image.getImageOwnerAlias());
+    nfvoImage.setPublic(image.getPublic());
     return nfvoImage;
   }
 }
