@@ -268,6 +268,14 @@ public class AmazonDriver extends VimDriver {
     return (BaseVimInstance) amazon;
   }
 
+    /**
+     * Waits for instance to go into status "running"
+     * @param name instance name
+     * @param vimInstance amazon vim instance
+     * @return server in status "running"
+     * @throws VimDriverException
+     * @throws InterruptedException
+     */
   private Server waitForInstance(String name, BaseVimInstance vimInstance)
       throws VimDriverException, InterruptedException {
     int timeOut = Integer.parseInt(properties.getProperty("launchTimeout"));
@@ -291,6 +299,11 @@ public class AmazonDriver extends VimDriver {
         "Launch Timeout reached, seems that the instance never went into running status");
   }
 
+    /**
+     * Associates elastic ips to servers interfaces
+     * @param client amazon client
+     * @param server server with iterfaces
+     */
   private void setupInstanceNetwork(AmazonEC2 client, Server server) {
     List<Address> freeAddresses = getUnallocatedAddresses(client);
     List<NetworkInterface> instanceInterfaces =
@@ -312,6 +325,11 @@ public class AmazonDriver extends VimDriver {
     }
   }
 
+    /**
+     * Allocated a number of elastic ips
+     * @param client amazon client
+     * @param number number of addresses needed
+     */
   private void allocateElasticIps(AmazonEC2 client, int number) {
     log.info("Allocating " + number + " elastic ips");
     AllocateAddressRequest req = new AllocateAddressRequest();
@@ -320,6 +338,11 @@ public class AmazonDriver extends VimDriver {
     }
   }
 
+    /**
+     * Returns unallocated elastic ip addresses
+     * @param client
+     * @return list of elastic ips
+     */
   private List<Address> getUnallocatedAddresses(AmazonEC2 client) {
     DescribeAddressesRequest addReq = new DescribeAddressesRequest();
     DescribeAddressesResult re = client.describeAddresses(addReq);
