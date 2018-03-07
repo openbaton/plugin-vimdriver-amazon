@@ -334,6 +334,7 @@ public class AmazonDriver extends VimDriver {
 
   /**
    * Get the interfaces attached to a certain VM
+   *
    * @param client amazonec2 client
    * @param instanceId id of the vm
    * @return list of interfaces
@@ -411,9 +412,10 @@ public class AmazonDriver extends VimDriver {
   }
 
   /**
-   * Creates an interface for the instance in order to connect to subnet. Does not assign floating ip,
-   * this method is used in case multiple interfaces are supposed to be created for on instance. Elastic ips
-   * are then assgined after creation.
+   * Creates an interface for the instance in order to connect to subnet. Does not assign floating
+   * ip, this method is used in case multiple interfaces are supposed to be created for on instance.
+   * Elastic ips are then assgined after creation.
+   *
    * @param net subnet inside AWS represented through NFVO network
    * @param deviceIndex device index for the interface is required by AWS
    * @param secIDs security group ID
@@ -440,22 +442,25 @@ public class AmazonDriver extends VimDriver {
   }
 
   /**
-   * Creates an interface for the instance in order to connect to subnet and assigns public ip to it connecting
-   * the instance to internet. Used only if the instance has no more than one network interface. It is made in order
-   * to conserve the limited amount of elastic ips on AWS (5 only generally) and not use them if not necessary.
+   * Creates an interface for the instance in order to connect to subnet and assigns public ip to it
+   * connecting the instance to internet. Used only if the instance has no more than one network
+   * interface. It is made in order to conserve the limited amount of elastic ips on AWS (5 only
+   * generally) and not use them if not necessary.
+   *
    * @param net subnet inside AWS represented through NFVO network
    * @param deviceIndex device index for the interface is required by AWS
    * @param secIDs security group ID
    * @return
    */
   private InstanceNetworkInterfaceSpecification createInterfaceWithPublicIp(
-          BaseNetwork net, int deviceIndex, Set<String> secIDs) {
+      BaseNetwork net, int deviceIndex, Set<String> secIDs) {
     InstanceNetworkInterfaceSpecification interSpec =
-            new InstanceNetworkInterfaceSpecification()
-                    .withDeleteOnTermination(true)
-                    .withSubnetId(net.getExtId())
-                    .withGroups(secIDs)
-                    .withDeviceIndex(deviceIndex).withAssociatePublicIpAddress(true);
+        new InstanceNetworkInterfaceSpecification()
+            .withDeleteOnTermination(true)
+            .withSubnetId(net.getExtId())
+            .withGroups(secIDs)
+            .withDeviceIndex(deviceIndex)
+            .withAssociatePublicIpAddress(true);
     log.info("Device index" + deviceIndex);
     return interSpec;
 
@@ -623,7 +628,8 @@ public class AmazonDriver extends VimDriver {
   }
 
   @Override
-  public Server rebuildServer(BaseVimInstance vimInstance, String serverId, String imageId) throws VimDriverException {
+  public Server rebuildServer(BaseVimInstance vimInstance, String serverId, String imageId)
+      throws VimDriverException {
     return null;
   }
 
@@ -779,6 +785,7 @@ public class AmazonDriver extends VimDriver {
 
   /**
    * Get the table of VPCs name to id by name
+   *
    * @param vimInstance
    * @return
    * @throws VimDriverException

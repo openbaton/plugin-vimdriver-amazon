@@ -2,6 +2,7 @@ package org.openbaton.drivers.amazon;
 
 import com.amazonaws.services.ec2.model.*;
 import java.util.*;
+import org.openbaton.catalogue.mano.common.SubnetIp;
 import org.openbaton.catalogue.nfvo.Server;
 import org.openbaton.catalogue.nfvo.images.AWSImage;
 import org.openbaton.catalogue.nfvo.images.NFVImage;
@@ -45,12 +46,14 @@ class Utils {
       server.setFloatingIps(floatingIps);
     }
     if (instance.getPrivateIpAddress() != null) {
-      HashMap<String, List<String>> ips = new HashMap<>();
-      List<String> privateIps = new ArrayList<>();
+      HashMap<String, Set<SubnetIp>> ips = new HashMap<>();
+      Set<SubnetIp> privateIps = new HashSet<>();
       List<InstanceNetworkInterface> netInt = instance.getNetworkInterfaces();
       for (InstanceNetworkInterface inter : netInt) {
-        for (InstancePrivateIpAddress adress : inter.getPrivateIpAddresses()) {
-          privateIps.add(adress.getPrivateIpAddress());
+        for (InstancePrivateIpAddress address : inter.getPrivateIpAddresses()) {
+          SubnetIp privateIp = new SubnetIp();
+          privateIp.setIp(address.getPrivateIpAddress());
+          privateIps.add(privateIp);
         }
         ips.put(netNameId.get(inter.getSubnetId()), privateIps);
       }
@@ -77,8 +80,8 @@ class Utils {
    * Converts aws subnet to nfvo network
    *
    * <p>AWS EC2 VPCs do not have internal networks. Subnet is converted to network with one subnet
-   * in order to map the resource as precisely as possible Is the subnet has not name tag, which is allowed
-   * in AWS the id will be assigned to name to ensure consistency
+   * in order to map the resource as precisely as possible Is the subnet has not name tag, which is
+   * allowed in AWS the id will be assigned to name to ensure consistency
    *
    * @param subnet aws subnet
    * @return created nfvo network
@@ -92,7 +95,9 @@ class Utils {
         nfvoNetwork.setName(tag.getValue());
       }
     }
-    if (nfvoNetwork.getName() == null || nfvoNetwork.getName().isEmpty() || nfvoNetwork.equals("")) {
+    if (nfvoNetwork.getName() == null
+        || nfvoNetwork.getName().isEmpty()
+        || nfvoNetwork.equals("")) {
       nfvoNetwork.setName(subnet.getSubnetId());
     }
     nfvoNetwork.setIpv4cidr(subnet.getCidrBlock());
