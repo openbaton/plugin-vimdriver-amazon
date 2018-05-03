@@ -77,7 +77,7 @@ repositories {
 dependencies {
     compile 'org.openbaton:plugin-sdk:' + obVersion
 
-    compile group: 'com.amazonaws', name: 'aws-java-sdk', version: '1.11.218'
+    compile group: 'com.amazonaws', name: 'aws-java-sdk', version: '1.11.251'
 
     compile 'org.slf4j:slf4j-api:1.7.25'
     compile 'org.slf4j:slf4j-simple:1.7.25'
