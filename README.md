@@ -26,8 +26,6 @@ $ java -jar path-to-plugin.jar amazon [rabbitmq-ip] [rabbitmq-port] [n-of-consum
 * **rabbitmq-ip** is the ip of the host where the rabbitmq server is installed and running
 * **rabbitmq-port** is the port on which the rabbitmq accepts the messages(it is usually 5672 by default) 
 * **number-of-consumers** specifies the number of actors that will accept the requests
-* **user** rabbitmq username (default: admin)
-* **password** rabbitmq password (default: openbaton)
 
 ## How to use the Amazon EC2 driver
 
@@ -39,14 +37,20 @@ $ java -jar path-to-plugin.jar amazon [rabbitmq-ip] [rabbitmq-port] [n-of-consum
 * Get your access key and access secret key from your aws account. It will be username and password in your VIM information.
 * Locate the region you want to work in and use the name to of the region without the letter in the end, for example us-east-2
 * After you have all this data either create the form as a json data or fill out the form in the dashboard to upload your vim information to NFVO.
-* Due to the high number of images in AWS system the plugin filters the image by ids and names, these can be provided inside the plugin properties:
+* Due to the high number of images in AWS it is not feasible to list all of the in dashboard of the openbaton, you can use any images found on AWS, but only those that in properties would be listed in NFVO.
+* All the instances currently get the public ip assigned to them in order to provide the internet functionality. For the instances that have more than 1 interface, elastic ip will be used, remember, 
+that by default the user has generally only 5 elastic ips available. 
 
 ```properties
 type = amazon
 external-properties-file = /etc/openbaton/plugin/amazon/driver.properties
 image-key-word = ami-10547475,ami-8a7859ef,ami-f990b69c,ami-43391926
+launchTimeout = 128
 ```
-image-key-word property provides an ability to list images that you want, it is recommended to paste the ids of the image which you can get from AWS itself
+image-key-word property provides an ability to list images that you want from the openbaton, it is recommended to paste the ids of the image which you can get from AWS itself, so that you can 
+see the images from the openbaton dashboard, however, you can use any image listed on AWS, the check on whether the image is present will be done during launch attempt by the plugin itself
+
+launchTimeout property define how long the plugin should wait for the instance to get in status "running" before assuming that the instance was not launched for some reason
 
 A step-by-step tutorial on how to make those changes is available [here for the dashboard](docs/how-to-ec2-dashboard.md) and [here for the CLI](docs/how-to-ec2-cli.md)
 
