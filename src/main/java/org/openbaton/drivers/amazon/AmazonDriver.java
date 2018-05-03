@@ -91,8 +91,8 @@ public class AmazonDriver extends VimDriver {
     String newData;
     Pattern pattern = Pattern.compile(Pattern.quote("echo hostname=$hn"));
     Matcher matcher = pattern.matcher(trimmedUserdata);
-    String start = "";
-    String end = "";
+    String start;
+    String end;
     if (matcher.find()) {
       start = trimmedUserdata.substring(0, matcher.start());
       end = trimmedUserdata.substring(matcher.end());
@@ -265,9 +265,18 @@ public class AmazonDriver extends VimDriver {
     }
     amazon.removeAllFlavours();
     amazon.addAllFlavours(newFlavors);
-    return (BaseVimInstance) amazon;
+    return amazon;
   }
 
+  /**
+   * Waits for instance to go into status "running"
+   *
+   * @param name instance name
+   * @param vimInstance amazon vim instance
+   * @return server in status "running"
+   * @throws VimDriverException
+   * @throws InterruptedException if timeout time is exceeded
+   */
   private Server waitForInstance(String name, BaseVimInstance vimInstance)
       throws VimDriverException, InterruptedException {
     int timeOut = Integer.parseInt(properties.getProperty("launchTimeout"));
@@ -291,6 +300,12 @@ public class AmazonDriver extends VimDriver {
         "Launch Timeout reached, seems that the instance never went into running status");
   }
 
+  /**
+   * Associates elastic ips to servers interfaces
+   *
+   * @param client amazon client
+   * @param server server with iterfaces
+   */
   private void setupInstanceNetwork(AmazonEC2 client, Server server) {
     List<Address> freeAddresses = getUnallocatedAddresses(client);
     List<NetworkInterface> instanceInterfaces =
@@ -312,6 +327,12 @@ public class AmazonDriver extends VimDriver {
     }
   }
 
+  /**
+   * Allocated a number of elastic ips
+   *
+   * @param client amazon client
+   * @param number number of addresses needed
+   */
   private void allocateElasticIps(AmazonEC2 client, int number) {
     log.info("Allocating " + number + " elastic ips");
     AllocateAddressRequest req = new AllocateAddressRequest();
@@ -320,6 +341,12 @@ public class AmazonDriver extends VimDriver {
     }
   }
 
+  /**
+   * Returns unallocated elastic ip addresses
+   *
+   * @param client amazon
+   * @return list of elastic ips
+   */
   private List<Address> getUnallocatedAddresses(AmazonEC2 client) {
     DescribeAddressesRequest addReq = new DescribeAddressesRequest();
     DescribeAddressesResult re = client.describeAddresses(addReq);
@@ -343,7 +370,7 @@ public class AmazonDriver extends VimDriver {
     Filter filter = new Filter();
     filter.setName("attachment.instance-id");
     filter.setValues(Collections.singletonList(instanceId));
-    Filter filter1 = new Filter();
+    //Filter filter1 = new Filter();
     //      filter1.setName("attachment.device-index");
     //      filter1.setValues(Collections.singletonList("0"));
     //
@@ -393,17 +420,17 @@ public class AmazonDriver extends VimDriver {
   private String imageExistsOnAWS(String nameId, AmazonEC2 client) throws AmazonClientException {
     Filter filter = new Filter();
     filter.setName("name");
-    filter.setValues(Arrays.asList(nameId));
+    filter.setValues(Collections.singletonList(nameId));
     DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
-    describeImagesRequest.setFilters(Arrays.asList(filter));
+    describeImagesRequest.setFilters(Collections.singletonList(filter));
     DescribeImagesResult describeImagesResult = client.describeImages(describeImagesRequest);
     if (describeImagesResult.getImages().size() > 0) {
       return describeImagesResult.getImages().get(0).getImageId();
     }
     filter.setName("image-id");
-    filter.setValues(Arrays.asList(nameId));
+    filter.setValues(Collections.singletonList(nameId));
     describeImagesRequest = new DescribeImagesRequest();
-    describeImagesRequest.setFilters(Arrays.asList(filter));
+    describeImagesRequest.setFilters(Collections.singletonList(filter));
     describeImagesResult = client.describeImages(describeImagesRequest);
     if (describeImagesResult.getImages().size() > 0) {
       return describeImagesResult.getImages().get(0).getImageId();
@@ -450,7 +477,7 @@ public class AmazonDriver extends VimDriver {
    * @param net subnet inside AWS represented through NFVO network
    * @param deviceIndex device index for the interface is required by AWS
    * @param secIDs security group ID
-   * @return
+   * @return interface specification
    */
   private InstanceNetworkInterfaceSpecification createInterfaceWithPublicIp(
       BaseNetwork net, int deviceIndex, Set<String> secIDs) {
@@ -461,7 +488,6 @@ public class AmazonDriver extends VimDriver {
             .withGroups(secIDs)
             .withDeviceIndex(deviceIndex)
             .withAssociatePublicIpAddress(true);
-    log.info("Device index" + deviceIndex);
     return interSpec;
 
     /*String floatingIp = "";
@@ -485,17 +511,14 @@ public class AmazonDriver extends VimDriver {
     ArrayList<VNFDConnectionPoint> cpList = new ArrayList<>(cps);
     Collections.sort(
         cpList,
-        new Comparator<VNFDConnectionPoint>() {
-          @Override
-          public int compare(VNFDConnectionPoint t, VNFDConnectionPoint t1) {
-            if (t.getInterfaceId() > t1.getInterfaceId()) {
-              return -1;
-            }
-            if (t.getInterfaceId() == t1.getInterfaceId()) {
-              return 0;
-            } else {
-              return 1;
-            }
+        (t, t1) -> {
+          if (t.getInterfaceId() > t1.getInterfaceId()) {
+            return -1;
+          }
+          if (t.getInterfaceId().equals(t1.getInterfaceId())) {
+            return 0;
+          } else {
+            return 1;
           }
         });
     List<AWSNetwork> relevantSubnets = new ArrayList<>();
@@ -526,14 +549,13 @@ public class AmazonDriver extends VimDriver {
     AmazonVimInstance vimInstance = (AmazonVimInstance) vimInstanceBase;
     String vpcId = getVpcsMap(vimInstance).get(vimInstance.getVpcName());
     if (vpcId == null) {
-      throw new VimDriverException(
-          "No such VPC " + ((AmazonVimInstance) vimInstance).getVpcName() + " exists");
+      throw new VimDriverException("No such VPC " + (vimInstance).getVpcName() + " exists");
     }
     Filter filter = new Filter();
     filter.setName("vpc-id");
-    filter.setValues(Arrays.asList(vpcId));
+    filter.setValues(Collections.singletonList(vpcId));
     DescribeSecurityGroupsRequest req = new DescribeSecurityGroupsRequest();
-    req.setFilters(Arrays.asList(filter));
+    req.setFilters(Collections.singletonList(filter));
     DescribeSecurityGroupsResult res = client.describeSecurityGroups(req);
     Set<String> groupIds = new HashSet<>();
     for (String name : groupNames) {
@@ -547,7 +569,7 @@ public class AmazonDriver extends VimDriver {
         groupIds.add(id);
       } else {
         throw new VimDriverException(
-            "No group " + name + "exists on VPC " + ((AmazonVimInstance) vimInstance).getVpcName());
+            "No group " + name + "exists on VPC " + (vimInstance).getVpcName());
       }
     }
 
@@ -568,7 +590,7 @@ public class AmazonDriver extends VimDriver {
       filter.setName("name");
       filter.setValues(Arrays.asList(keyWords));
       DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
-      describeImagesRequest.setFilters(Arrays.asList(filter));
+      describeImagesRequest.setFilters(Collections.singletonList(filter));
       DescribeImagesResult describeImagesResult = client.describeImages(describeImagesRequest);
       List<BaseNfvImage> images = new ArrayList<>();
       for (Image image : describeImagesResult.getImages()) {
@@ -577,7 +599,7 @@ public class AmazonDriver extends VimDriver {
       filter.setName("image-id");
       filter.setValues(Arrays.asList(keyWords));
       describeImagesRequest = new DescribeImagesRequest();
-      describeImagesRequest.setFilters(Arrays.asList(filter));
+      describeImagesRequest.setFilters(Collections.singletonList(filter));
       describeImagesResult = client.describeImages(describeImagesRequest);
       for (Image image : describeImagesResult.getImages()) {
         images.add(Utils.getImage(image));
@@ -585,8 +607,7 @@ public class AmazonDriver extends VimDriver {
 
       return images;
     } catch (AmazonClientException e) {
-      VimDriverException vimDriverException = new VimDriverException(e.getMessage());
-      throw vimDriverException;
+      throw new VimDriverException(e.getMessage());
     }
   }
 
@@ -603,12 +624,12 @@ public class AmazonDriver extends VimDriver {
       }
       Filter filter = new Filter();
       filter.setName("vpc-id");
-      filter.setValues(Arrays.asList(vpcId));
+      filter.setValues(Collections.singletonList(vpcId));
       boolean done = false;
       List<BaseNetwork> nets = listNetworks(vimInstance);
       while (!done) {
         DescribeInstancesRequest request = new DescribeInstancesRequest();
-        request.setFilters(Arrays.asList(filter));
+        request.setFilters(Collections.singletonList(filter));
         DescribeInstancesResult response = client.describeInstances(request);
         for (Reservation reservation : response.getReservations()) {
           for (Instance instance : reservation.getInstances()) {
@@ -622,8 +643,7 @@ public class AmazonDriver extends VimDriver {
       }
       return servers;
     } catch (AmazonClientException e) {
-      VimDriverException vimDriverException = new VimDriverException(e.getMessage());
-      throw vimDriverException;
+      throw new VimDriverException(e.getMessage());
     }
   }
 
@@ -645,13 +665,13 @@ public class AmazonDriver extends VimDriver {
     }
     Filter filter = new Filter();
     filter.setName("vpc-id");
-    filter.setValues(Arrays.asList(vpcId));
+    filter.setValues(Collections.singletonList(vpcId));
     DescribeSubnetsRequest describeSubnetsRequest = new DescribeSubnetsRequest();
-    describeSubnetsRequest.setFilters(Arrays.asList(filter));
+    describeSubnetsRequest.setFilters(Collections.singletonList(filter));
     DescribeSubnetsResult subnetsResult = client.describeSubnets(describeSubnetsRequest);
     List<com.amazonaws.services.ec2.model.Subnet> subnets = subnetsResult.getSubnets();
     for (Subnet subnet : subnets) {
-      nfvoNetworks.add((BaseNetwork) Utils.getNetworkFromSubnet(subnet));
+      nfvoNetworks.add(Utils.getNetworkFromSubnet(subnet));
     }
     return nfvoNetworks;
   }
@@ -683,11 +703,8 @@ public class AmazonDriver extends VimDriver {
       java.util.Set<Key> keys)
       throws VimDriverException {
 
-    Server server =
-        launchInstance(
-            vimInstance, hostname, image, flavorExtId, keyPair, networks, securityGroups, userData);
-
-    return server;
+    return launchInstance(
+        vimInstance, hostname, image, flavorExtId, keyPair, networks, securityGroups, userData);
   }
 
   @Override
@@ -720,10 +737,9 @@ public class AmazonDriver extends VimDriver {
     try {
       AmazonEC2 client = createClient((AmazonVimInstance) vimInstance);
       TerminateInstancesRequest req = new TerminateInstancesRequest().withInstanceIds(id);
-      TerminateInstancesResult res = client.terminateInstances(req);
+      client.terminateInstances(req);
     } catch (AmazonClientException e) {
-      VimDriverException vimDriverException = new VimDriverException(e.getMessage());
-      throw vimDriverException;
+      throw new VimDriverException(e.getMessage());
     }
   }
 
@@ -778,17 +794,16 @@ public class AmazonDriver extends VimDriver {
 
       return returnNetwork;
     } catch (AmazonClientException e) {
-      VimDriverException vimDriverException = new VimDriverException(e.getMessage());
-      throw vimDriverException;
+      throw new VimDriverException(e.getMessage());
     }
   }
 
   /**
    * Get the table of VPCs name to id by name
    *
-   * @param vimInstance
-   * @return
-   * @throws VimDriverException
+   * @param vimInstance viminstance descriptions
+   * @return map with vpc ids
+   * @throws VimDriverException if error is occured
    */
   private HashMap<String, String> getVpcsMap(AmazonVimInstance vimInstance)
       throws VimDriverException {
@@ -809,8 +824,7 @@ public class AmazonDriver extends VimDriver {
       }
       return vpcNameId;
     } catch (AmazonClientException e) {
-      VimDriverException vimDriverException = new VimDriverException(e.getMessage());
-      throw vimDriverException;
+      throw new VimDriverException(e.getMessage());
     }
   }
 
@@ -830,9 +844,9 @@ public class AmazonDriver extends VimDriver {
     AWSImage newImage;
     Filter filter = new Filter();
     filter.setName("image-id");
-    filter.setValues(Arrays.asList(image.getName()));
+    filter.setValues(Collections.singletonList(image.getName()));
     DescribeImagesRequest describeImagesRequest = new DescribeImagesRequest();
-    describeImagesRequest.setFilters(Arrays.asList(filter));
+    describeImagesRequest.setFilters(Collections.singletonList(filter));
     DescribeImagesResult describeImagesResult = client.describeImages(describeImagesRequest);
     if (describeImagesResult.getImages().size() > 1) {
       throw new VimDriverException("There are several images with this name");
@@ -842,9 +856,9 @@ public class AmazonDriver extends VimDriver {
       return newImage;
     }
     filter.setName("name");
-    filter.setValues(Arrays.asList(image.getName()));
+    filter.setValues(Collections.singletonList(image.getName()));
     describeImagesRequest = new DescribeImagesRequest();
-    describeImagesRequest.setFilters(Arrays.asList(filter));
+    describeImagesRequest.setFilters(Collections.singletonList(filter));
     describeImagesResult = client.describeImages(describeImagesRequest);
     if (describeImagesResult.getImages().size() > 1) {
       throw new VimDriverException("There are several images with this id");
@@ -943,11 +957,10 @@ public class AmazonDriver extends VimDriver {
       AmazonVimInstance vimInstance = (AmazonVimInstance) vimInstanceBase;
       AmazonEC2 client = createClient(vimInstance);
       DeleteSubnetRequest req = new DeleteSubnetRequest().withSubnetId(extId);
-      DeleteSubnetResult res = client.deleteSubnet(req);
+      client.deleteSubnet(req);
       return true;
     } catch (AmazonClientException e) {
-      VimDriverException vimDriverException = new VimDriverException(e.getMessage());
-      throw vimDriverException;
+      throw new VimDriverException(e.getMessage());
     }
   }
 
@@ -959,7 +972,7 @@ public class AmazonDriver extends VimDriver {
     try {
       Filter filter = new Filter();
       filter.setName("subnet-id");
-      filter.setValues(Arrays.asList(id));
+      filter.setValues(Collections.singletonList(id));
       DescribeSubnetsRequest req = new DescribeSubnetsRequest().withFilters(filter);
       DescribeSubnetsResult res = client.describeSubnets(req);
       if (res.getSubnets().size() < 1) {
@@ -967,8 +980,7 @@ public class AmazonDriver extends VimDriver {
       }
       return Utils.getNetworkFromSubnet(res.getSubnets().get(0));
     } catch (AmazonClientException e) {
-      VimDriverException vimDriverException = new VimDriverException(e.getMessage());
-      throw vimDriverException;
+      throw new VimDriverException(e.getMessage());
     }
   }
 
