@@ -56,7 +56,7 @@ project.ext {
      * gradle Related Vars
      */
     mainClass = 'org.openbaton.drivers.amazon.AmazonDriver'
-    obVersion = '5.1.3-SNAPSHOT'
+    obVersion = '5.2.1'
     //------------------------------------------------//
 }
 
